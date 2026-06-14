@@ -1,8 +1,8 @@
 diff --git a/fs/exec.c b/fs/exec.c
-index eef84ebca..c349aeee6 100644
+index 1396e615b..42aa0e205 100644
 --- a/fs/exec.c
 +++ b/fs/exec.c
-@@ -1911,12 +1911,21 @@ int do_execve_file(struct file *file, void *__argv, void *__envp)
+@@ -1948,12 +1948,21 @@ int do_execve_file(struct file *file, void *__argv, void *__envp)
  	return __do_execve_file(AT_FDCWD, NULL, argv, envp, 0, file);
  }
  
@@ -24,7 +24,7 @@ index eef84ebca..c349aeee6 100644
  	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
  }
  
-@@ -1944,6 +1953,9 @@ static int compat_do_execve(struct filename *filename,
+@@ -1981,6 +1990,9 @@ static int compat_do_execve(struct filename *filename,
  		.is_compat = true,
  		.ptr.compat = __envp,
  	};
@@ -35,10 +35,10 @@ index eef84ebca..c349aeee6 100644
  }
  
 diff --git a/fs/open.c b/fs/open.c
-index 13d70db56..292d1177d 100644
+index 19f1f5875..de662ff98 100644
 --- a/fs/open.c
 +++ b/fs/open.c
-@@ -451,8 +451,17 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+@@ -459,8 +459,17 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
  	return res;
  }
  
@@ -57,10 +57,10 @@ index 13d70db56..292d1177d 100644
  }
  
 diff --git a/fs/stat.c b/fs/stat.c
-index 376543199..f276cb11d 100644
+index be7d75d25..75c477ed6 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -353,6 +353,17 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+@@ -361,6 +361,17 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
  	return cp_new_stat(&stat, statbuf);
  }
  
@@ -78,7 +78,7 @@ index 376543199..f276cb11d 100644
  #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
  SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  		struct stat __user *, statbuf, int, flag)
-@@ -360,6 +371,9 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+@@ -368,6 +379,9 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  
@@ -88,7 +88,17 @@ index 376543199..f276cb11d 100644
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -498,6 +512,9 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+@@ -383,6 +397,9 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+ 	if (!error)
+ 		error = cp_new_stat(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU_MANUAL_HOOK
++	ksu_handle_newfstat_ret(&fd, &statbuf);
++#endif
+ 	return error;
+ }
+ 
+@@ -506,6 +523,9 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
  	struct kstat stat;
  	int error = vfs_fstat(fd, &stat);
  
@@ -98,7 +108,7 @@ index 376543199..f276cb11d 100644
  	if (!error)
  		error = cp_new_stat64(&stat, statbuf);
  
-@@ -510,6 +527,9 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
+@@ -518,6 +538,9 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  
@@ -108,22 +118,19 @@ index 376543199..f276cb11d 100644
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -665,6 +685,10 @@ COMPAT_SYSCALL_DEFINE2(newfstat, unsigned int, fd,
+@@ -673,6 +696,7 @@ COMPAT_SYSCALL_DEFINE2(newfstat, unsigned int, fd,
  
  	if (!error)
  		error = cp_compat_stat(&stat, statbuf);
 +
-+#ifdef CONFIG_KSU_MANUAL_HOOK
-+	ksu_handle_newfstat_ret(&fd, &statbuf);
-+#endif
  	return error;
  }
  #endif
 diff --git a/kernel/reboot.c b/kernel/reboot.c
-index 3a87fee47..26f84a340 100644
+index 921ef0527..aa72efc63 100644
 --- a/kernel/reboot.c
 +++ b/kernel/reboot.c
-@@ -305,6 +305,11 @@ DEFINE_MUTEX(system_transition_mutex);
+@@ -317,6 +317,11 @@ DEFINE_MUTEX(system_transition_mutex);
   *
   * reboot doesn't sync: do that yourself before calling this.
   */
@@ -135,14 +142,14 @@ index 3a87fee47..26f84a340 100644
  SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  		void __user *, arg)
  {
-@@ -312,6 +317,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+@@ -324,6 +329,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  	char buffer[256];
  	int ret = 0;
  
 +#ifdef CONFIG_KSU_MANUAL_HOOK
-+	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++        ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
 +#endif
 +
- 	/* We only trust the superuser with rebooting the system. */
- 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
- 		return -EPERM;
+ 	if (check_poweroff_charger_mode()){
+ 		pr_warn("poweroff charging skip this detect\n");
+ 	} else {
